@@ -32,6 +32,7 @@ cc_binary {
         "android.hardware.health@1.0-convert",
         "libhealthservice",
         "libbatterymonitor",
+        "libhwbinder-impl-internal",
     ],
 
     shared_libs: [
@@ -39,9 +40,9 @@ cc_binary {
         "libcutils",
         "libhidlbase",
         "libhidltransport",
-        "libhwbinder",
         "libutils",
         "android.hardware.health@2.0",
+        "liblog"
     ],
 
     header_libs: ["libhealthd_headers"],

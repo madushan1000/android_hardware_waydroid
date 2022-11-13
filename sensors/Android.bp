@@ -26,9 +26,11 @@ cc_binary {
         "libhidlbase",
         "libhidltransport",
         "liblog",
-        "libhwbinder",
         "libutils",
         "libcutils",
         "android.hardware.sensors@1.0",
+    ],
+    static_libs: [
+        "libhwbinder-impl-internal",
     ],
 }

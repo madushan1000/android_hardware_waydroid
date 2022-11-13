@@ -35,8 +35,10 @@ cc_binary {
         "libhidlbase",
         "libhidltransport",
         "liblog",
-        "libhwbinder",
         "libutils",
         "vendor.waydroid.task@1.0",
+    ],
+    static_libs: [
+        "libhwbinder-impl-internal",
     ],
 }
