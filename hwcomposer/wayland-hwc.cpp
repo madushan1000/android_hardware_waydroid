@@ -537,17 +537,110 @@ create_window(struct display *display, bool with_dummy, std::string appID, std::
     return window;
 }
 
+// static int
+// ensure_pipe(struct display* display, int input_type)
+// {
+//     if (display->input_fd[input_type] == -1) {
+//         display->input_fd[input_type] = open(INPUT_PIPE_NAME[input_type], O_WRONLY | O_NONBLOCK);
+//         if (display->input_fd[input_type] == -1) {
+//             ALOGE("Failed to open pipe to InputFlinger: %s", strerror(errno));
+//             return -1;
+//         }
+//     }
+//     return 0;
+// }
+
 static int
 ensure_pipe(struct display* display, int input_type)
 {
-    if (display->input_fd[input_type] == -1) {
-        display->input_fd[input_type] = open(INPUT_PIPE_NAME[input_type], O_WRONLY | O_NONBLOCK);
-        if (display->input_fd[input_type] == -1) {
-            ALOGE("Failed to open pipe to InputFlinger: %s", strerror(errno));
-            return -1;
+    int err;
+    struct libevdev *dev;
+    ALOGE("%s:%d creating virtual input: %d",
+              __FILE__, __LINE__, input_type);
+    if (display->input_fd[input_type] == NULL) {
+        dev = libevdev_new();
+        switch (input_type)
+        {
+            case INPUT_KEYBOARD:
+                libevdev_set_name(dev, "wayland keyboard");
+                libevdev_enable_event_type(dev, EV_KEY);
+                for(uint key = 1; key < 255; ++key) {
+                    libevdev_enable_event_code(dev, EV_KEY, key, nullptr);
+                }
+                break;
+            case INPUT_POINTER:
+                libevdev_set_name(dev, "wayland pointer");
+                libevdev_enable_event_type(dev, EV_REL);
+                libevdev_enable_event_code(dev, EV_REL, REL_X, nullptr);
+                libevdev_enable_event_code(dev, EV_REL, REL_Y, nullptr);
+                libevdev_enable_event_code(dev, EV_REL, REL_HWHEEL, nullptr);
+                libevdev_enable_event_code(dev, EV_REL, REL_WHEEL, nullptr);
+
+                libevdev_enable_event_type(dev, EV_ABS);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_X, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_Y, nullptr);
+
+                libevdev_enable_event_type(dev, EV_KEY);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_LEFT, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_RIGHT, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_MIDDLE, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_SIDE, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_EXTRA, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_FORWARD, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_BACK, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TASK, nullptr);
+                break;
+            case INPUT_TOUCH:
+                libevdev_enable_event_type(dev, EV_ABS);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_MT_POSITION_X, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_MT_POSITION_Y, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_MT_TOUCH_MAJOR, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_MT_TOUCH_MINOR, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_MT_ORIENTATION, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_MT_TRACKING_ID, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_MT_PRESSURE, nullptr);
+                break;
+            case INPUT_TABLET:
+                libevdev_enable_event_type(dev, EV_KEY);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_PEN, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_RUBBER, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_BRUSH, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_PENCIL, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_AIRBRUSH, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_FINGER, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_MOUSE, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_LENS, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOUCH, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_STYLUS, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_STYLUS2, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_STYLUS3, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, ABS_X, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, ABS_Y, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, ABS_PRESSURE, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, ABS_DISTANCE, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, ABS_TILT_X, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, ABS_TILT_Y, nullptr);
+                break;
+            default:
+                break;
         }
+        err = libevdev_uinput_create_from_device(dev,
+            LIBEVDEV_UINPUT_OPEN_MANAGED,
+            &(display->input_fd[input_type]));
+        ALOGE("%s:%d libevdev_uinput_create_from_device: %s",
+            __FILE__, __LINE__, strerror(errno));
+        if (err != 0)
+            return -1;
+     }
+     return 0;
+}
+
+static void
+remove_virtual_input(struct display* display, int input_type)
+{
+    if(display->input_fd[input_type] != NULL) {
+        libevdev_uinput_destroy(display->input_fd[input_type]);
     }
-    return 0;
 }
 
 #define ADD_EVENT(type_, code_, value_)            \
@@ -562,9 +655,7 @@ static void
 send_key_event(display *data, uint32_t key, wl_keyboard_key_state state)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[1];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (key >= display->keysDown.size()) {
         ALOGE("Invalid key: %u", key);
@@ -574,14 +665,12 @@ send_key_event(display *data, uint32_t key, wl_keyboard_key_state state)
     if (ensure_pipe(display, INPUT_KEYBOARD))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-    ADD_EVENT(EV_KEY, key, state);
+    ALOGE("%s:%d sending key: %d, state: %d",
+              __FILE__, __LINE__, key, state);
+    libevdev_uinput_write_event(display->input_fd[INPUT_KEYBOARD], EV_KEY, key, state);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_KEYBOARD], EV_SYN, SYN_REPORT, 0);
 
-    res = write(display->input_fd[INPUT_KEYBOARD], &event, sizeof(event));
-    if (res < sizeof(event))
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
     display->keysDown[(uint8_t)key] = state;
 }
@@ -681,10 +770,8 @@ pointer_handle_motion(void *data, struct wl_pointer *,
                       uint32_t, wl_fixed_t sx, wl_fixed_t sy)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[5];
-    struct timespec rt;
     int x, y;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_POINTER))
         return;
@@ -692,30 +779,28 @@ pointer_handle_motion(void *data, struct wl_pointer *,
     if (!display->pointer_surface)
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
     x = wl_fixed_to_int(sx);
     y = wl_fixed_to_int(sy);
+
     if (display->scale > 1) {
         x *= display->scale;
         y *= display->scale;
     }
+
     x += display->layers[display->pointer_surface].x;
     y += display->layers[display->pointer_surface].y;
 
-    ADD_EVENT(EV_ABS, ABS_X, x);
-    ADD_EVENT(EV_ABS, ABS_Y, y);
-    ADD_EVENT(EV_REL, REL_X, x - display->ptrPrvX);
-    ADD_EVENT(EV_REL, REL_Y, y - display->ptrPrvY);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
+    //res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], ABS_X, x, 0);
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], ABS_Y, y, 0);
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], REL_X, x - display->ptrPrvX, 0);
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], REL_Y, y - display->ptrPrvY, 0);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
+        ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
+    
     display->ptrPrvX = x;
     display->ptrPrvY = y;
-
-    res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
-    if (res < sizeof(event))
-        ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
 static void
@@ -724,9 +809,7 @@ pointer_handle_button(void *data, struct wl_pointer *,
                       uint32_t state)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_POINTER))
         return;
@@ -734,15 +817,10 @@ pointer_handle_button(void *data, struct wl_pointer *,
     if (!display->pointer_surface)
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-    ADD_EVENT(EV_KEY, button, state);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_KEY, button, state);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -751,9 +829,7 @@ pointer_handle_axis(void *data, struct wl_pointer *,
                     uint32_t, uint32_t axis, wl_fixed_t value)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, move, n = 0;
+    unsigned int res, move;
     double fVal = wl_fixed_to_double(value) / 10.0f;
     double step = 1.0f;
 
@@ -783,17 +859,12 @@ pointer_handle_axis(void *data, struct wl_pointer *,
                                      std::fmod(display->wheelAccumulatorY, step);
     }
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_REL, (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
-              ? REL_WHEEL : REL_HWHEEL, move);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_REL,
+                                (axis == WL_POINTER_AXIS_VERTICAL_SCROLL)
+                                ? REL_WHEEL : REL_HWHEEL, move);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -866,20 +937,14 @@ touch_handle_down(void *data, struct wl_touch *,
           int32_t id, wl_fixed_t x_w, wl_fixed_t y_w)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[6];
-    struct timespec rt;
     int x, y;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TOUCH))
         return;
 
     display->touch_surfaces[id] = surface;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-       ALOGE("%s:%d error in touch clock_gettime: %s",
-            __FILE__, __LINE__, strerror(errno));
-    }
     x = wl_fixed_to_int(x_w);
     y = wl_fixed_to_int(y_w);
     if (display->scale > 1) {
@@ -889,15 +954,14 @@ touch_handle_down(void *data, struct wl_touch *,
     x += display->layers[surface].x;
     y += display->layers[surface].y;
 
-    ADD_EVENT(EV_ABS, ABS_MT_SLOT, get_touch_id(display, id));
-    ADD_EVENT(EV_ABS, ABS_MT_TRACKING_ID, get_touch_id(display, id));
-    ADD_EVENT(EV_ABS, ABS_MT_POSITION_X, x);
-    ADD_EVENT(EV_ABS, ABS_MT_POSITION_Y, y);
-    ADD_EVENT(EV_ABS, ABS_MT_PRESSURE, 50);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_SLOT, get_touch_id(display, id));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_TRACKING_ID, get_touch_id(display, id));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_POSITION_X, x);
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_POSITION_Y, y);
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_PRESSURE, 50);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -906,25 +970,18 @@ touch_handle_up(void *data, struct wl_touch *,
         uint32_t, uint32_t, int32_t id)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[3];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TOUCH))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-       ALOGE("%s:%d error in touch clock_gettime: %s",
-            __FILE__, __LINE__, strerror(errno));
-    }
     display->touch_surfaces[id] = NULL;
 
-    ADD_EVENT(EV_ABS, ABS_MT_SLOT, flush_touch_id(display, id));
-    ADD_EVENT(EV_ABS, ABS_MT_TRACKING_ID, -1);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_SLOT, flush_touch_id(display, id));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_TRACKING_ID, -1);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -933,18 +990,12 @@ touch_handle_motion(void *data, struct wl_touch *,
             uint32_t, int32_t id, wl_fixed_t x_w, wl_fixed_t y_w)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[6];
-    struct timespec rt;
     int x, y;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TOUCH))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-       ALOGE("%s:%d error in touch clock_gettime: %s",
-            __FILE__, __LINE__, strerror(errno));
-    }
     x = wl_fixed_to_int(x_w);
     y = wl_fixed_to_int(y_w);
     if (display->scale > 1) {
@@ -954,15 +1005,14 @@ touch_handle_motion(void *data, struct wl_touch *,
     x += display->layers[display->touch_surfaces[id]].x;
     y += display->layers[display->touch_surfaces[id]].y;
 
-    ADD_EVENT(EV_ABS, ABS_MT_SLOT, get_touch_id(display, id));
-    ADD_EVENT(EV_ABS, ABS_MT_TRACKING_ID, get_touch_id(display, id));
-    ADD_EVENT(EV_ABS, ABS_MT_POSITION_X, x);
-    ADD_EVENT(EV_ABS, ABS_MT_POSITION_Y, y);
-    ADD_EVENT(EV_ABS, ABS_MT_PRESSURE, 50);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_SLOT, get_touch_id(display, id));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_TRACKING_ID, get_touch_id(display, id));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_POSITION_X, x);
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_POSITION_Y, y);
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_PRESSURE, 50);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_SYN, SYN_REPORT, 0);
+    if (res!= 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -997,7 +1047,12 @@ touch_handle_shape(void *data, struct wl_touch *, int32_t id, wl_fixed_t major, 
     ADD_EVENT(EV_ABS, ABS_MT_TOUCH_MINOR, wl_fixed_to_int(minor));
     ADD_EVENT(EV_SYN, SYN_REPORT, 0);
 
-    res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
+    // res = write(display->input_fd[INPUT_TOUCH], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_SLOT, get_touch_id(display, id));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_TRACKING_ID, get_touch_id(display, id));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_TOUCH_MAJOR, wl_fixed_to_int(major));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_ABS, ABS_MT_TOUCH_MINOR, wl_fixed_to_int(minor));
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TOUCH], EV_SYN, SYN_REPORT, 0);
     if (res < sizeof(event))
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
@@ -1035,7 +1090,7 @@ seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t wl_caps)
 
     if ((caps & WL_SEAT_CAPABILITY_POINTER) && !d->pointer) {
         d->pointer = wl_seat_get_pointer(seat);
-        d->input_fd[INPUT_POINTER] = -1;
+        //d->input_fd[INPUT_POINTER] = -1;
         d->ptrPrvX = 0;
         d->ptrPrvY = 0;
         d->reverseScroll = property_get_bool("persist.waydroid.reverse_scrolling", false);
@@ -1050,19 +1105,20 @@ seat_handle_capabilities(void *data, struct wl_seat *seat, uint32_t wl_caps)
 
     if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !d->keyboard) {
         d->keyboard = wl_seat_get_keyboard(seat);
-        d->input_fd[INPUT_KEYBOARD] = -1;
-        mkfifo(INPUT_PIPE_NAME[INPUT_KEYBOARD], S_IRWXO | S_IRWXG | S_IRWXU);
-        chown(INPUT_PIPE_NAME[INPUT_KEYBOARD], 1000, 1000);
+        //d->input_fd[INPUT_KEYBOARD] = -1;
+        // mkfifo(INPUT_PIPE_NAME[INPUT_KEYBOARD], S_IRWXO | S_IRWXG | S_IRWXU);
+        // chown(INPUT_PIPE_NAME[INPUT_KEYBOARD], 1000, 1000);
         wl_keyboard_add_listener(d->keyboard, &keyboard_listener, d);
     } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && d->keyboard) {
-        remove(INPUT_PIPE_NAME[INPUT_KEYBOARD]);
+        //remove(INPUT_PIPE_NAME[INPUT_KEYBOARD]);
+        remove_virtual_input(d, INPUT_KEYBOARD);
         wl_keyboard_destroy(d->keyboard);
         d->keyboard = NULL;
     }
 
     if ((caps & WL_SEAT_CAPABILITY_TOUCH) && !d->touch) {
         d->touch = wl_seat_get_touch(seat);
-        d->input_fd[INPUT_TOUCH] = -1;
+        //d->input_fd[INPUT_TOUCH] = -1;
         mkfifo(INPUT_PIPE_NAME[INPUT_TOUCH], S_IRWXO | S_IRWXG | S_IRWXU);
         chown(INPUT_PIPE_NAME[INPUT_TOUCH], 1000, 1000);
         for (int i = 0; i < MAX_TOUCHPOINTS; i++)
@@ -1251,25 +1307,17 @@ tablet_tool_proximity_in(void *data, struct zwp_tablet_tool_v2 *tool,
                          struct wl_surface *surface)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
     display->tablet_surface = surface;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_KEY, display->tablet_tools_evt[tool], 1);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_KEY, display->tablet_tools_evt[tool], 1);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1277,25 +1325,17 @@ static void
 tablet_tool_proximity_out(void *data, struct zwp_tablet_tool_v2 *tool)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
     display->tablet_surface = NULL;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_KEY, display->tablet_tools_evt[tool], 0);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_KEY, display->tablet_tools_evt[tool], 0);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1303,23 +1343,15 @@ static void
 tablet_tool_down(void *data, struct zwp_tablet_tool_v2 *, uint32_t)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_KEY, BTN_TOUCH, 1);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_KEY, BTN_TOUCH, 1);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1327,23 +1359,15 @@ static void
 tablet_tool_up(void *data, struct zwp_tablet_tool_v2 *)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_KEY, BTN_TOUCH, 0);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_KEY, BTN_TOUCH, 0);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1352,18 +1376,12 @@ tablet_tool_motion(void *data, struct zwp_tablet_tool_v2 *,
                    wl_fixed_t x_w, wl_fixed_t y_w)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[3];
-    struct timespec rt;
     int x, y;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-       ALOGE("%s:%d error in touch clock_gettime: %s",
-            __FILE__, __LINE__, strerror(errno));
-    }
     x = wl_fixed_to_int(x_w);
     y = wl_fixed_to_int(y_w);
     if (display->scale > 1) {
@@ -1373,12 +1391,11 @@ tablet_tool_motion(void *data, struct zwp_tablet_tool_v2 *,
     x += display->layers[display->tablet_surface].x;
     y += display->layers[display->tablet_surface].y;
 
-    ADD_EVENT(EV_ABS, ABS_X, x);
-    ADD_EVENT(EV_ABS, ABS_Y, y);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_ABS, ABS_X, x);
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_ABS, ABS_Y, y);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1387,26 +1404,18 @@ tablet_tool_pressure(void *data, struct zwp_tablet_tool_v2 *,
                      uint32_t pressure)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
     // wayland value is 16 bits. android expects 8 bits max.
     pressure >>= 8;
 
-    ADD_EVENT(EV_ABS, ABS_PRESSURE, pressure);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_ABS, ABS_PRESSURE, pressure);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1415,23 +1424,15 @@ tablet_tool_distance(void *data, struct zwp_tablet_tool_v2 *,
                      uint32_t distance_raw)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_ABS, ABS_DISTANCE, distance_raw);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_ABS, ABS_DISTANCE, distance_raw);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1440,24 +1441,16 @@ tablet_tool_tilt(void *data, struct zwp_tablet_tool_v2 *,
                  wl_fixed_t tilt_x, wl_fixed_t tilt_y)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[3];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-       ALOGE("%s:%d error in touch clock_gettime: %s",
-            __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_ABS, ABS_TILT_X, wl_fixed_to_int(tilt_x));
-    ADD_EVENT(EV_ABS, ABS_TILT_Y, wl_fixed_to_int(tilt_y));
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_ABS, ABS_TILT_X, wl_fixed_to_int(tilt_x));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_ABS, ABS_TILT_Y, wl_fixed_to_int(tilt_y));
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1481,23 +1474,15 @@ tablet_tool_button_state(void *data, struct zwp_tablet_tool_v2 *,
                          uint32_t, uint32_t button, uint32_t state)
 {
     struct display* display = (struct display*)data;
-    struct input_event event[2];
-    struct timespec rt;
-    unsigned int res, n = 0;
+    unsigned int res;
 
     if (ensure_pipe(display, INPUT_TABLET))
         return;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &rt) == -1) {
-        ALOGE("%s:%d error in touch clock_gettime: %s",
-              __FILE__, __LINE__, strerror(errno));
-    }
-
-    ADD_EVENT(EV_KEY, button, state);
-    ADD_EVENT(EV_SYN, SYN_REPORT, 0);
-
-    res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
-    if (res < sizeof(event))
+    // res = write(display->input_fd[INPUT_TABLET], &event, sizeof(event));
+    libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_KEY, button, state);
+    res = libevdev_uinput_write_event(display->input_fd[INPUT_TABLET], EV_SYN, SYN_REPORT, 0);
+    if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
 }
 
@@ -1544,7 +1529,7 @@ static const struct zwp_tablet_seat_v2_listener tablet_seat_listener = {
 };
 
 static void add_tablet_seat(struct display *d) {
-    d->input_fd[INPUT_TABLET] = -1;
+    //d->input_fd[INPUT_TABLET] = -1;
     mkfifo(INPUT_PIPE_NAME[INPUT_TABLET], S_IRWXO | S_IRWXG | S_IRWXU);
     chown(INPUT_PIPE_NAME[INPUT_TABLET], 1000, 1000);
 

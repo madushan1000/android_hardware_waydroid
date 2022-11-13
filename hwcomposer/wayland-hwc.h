@@ -47,6 +47,9 @@
 #include <pthread.h>
 #include <hardware/hwcomposer.h>
 #include <vendor/waydroid/task/1.0/IWaydroidTask.h>
+#include <libevdev/libevdev.h>
+#include <libevdev/libevdev-uinput-int.h>
+#include <libevdev/libevdev-uinput.h>
 
 using ::android::sp;
 using ::vendor::waydroid::task::V1_0::IWaydroidTask;
@@ -112,7 +115,7 @@ struct display {
     pthread_cond_t data_available_cond;
     bool waiting_for_data;
 
-    int input_fd[INPUT_TOTAL];
+    struct libevdev_uinput * input_fd[INPUT_TOTAL];
     int ptrPrvX;
     int ptrPrvY;
     double wheelAccumulatorX;
