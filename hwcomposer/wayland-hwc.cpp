@@ -249,6 +249,7 @@ create_shm_wl_buffer(struct display *display, struct buffer *buffer,
     if (display->gtype == GRALLOC_GBM)
         shm_stride = stride;
     int size = shm_stride * height;
+    buffer -> size = size;
 
     buffer->format = ConvertHalFormatToShm(format);
     assert(buffer->format >= 0);
