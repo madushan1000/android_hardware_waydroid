@@ -556,6 +556,7 @@ ensure_pipe(struct display* display, int input_type)
 {
     int err;
     struct libevdev *dev;
+    char property[PROPERTY_VALUE_MAX];
     ALOGE("%s:%d creating virtual input: %d",
               __FILE__, __LINE__, input_type);
     if (display->input_fd[input_type] == NULL) {
@@ -571,27 +572,26 @@ ensure_pipe(struct display* display, int input_type)
                 break;
             case INPUT_POINTER:
                 libevdev_set_name(dev, "wayland pointer");
-                libevdev_enable_event_type(dev, EV_REL);
-                libevdev_enable_event_code(dev, EV_REL, REL_X, nullptr);
-                libevdev_enable_event_code(dev, EV_REL, REL_Y, nullptr);
-                libevdev_enable_event_code(dev, EV_REL, REL_HWHEEL, nullptr);
-                libevdev_enable_event_code(dev, EV_REL, REL_WHEEL, nullptr);
-
+                libevdev_enable_property(dev, INPUT_PROP_DIRECT);
+                struct input_absinfo absinfo;
+                absinfo.value = 0;
+                absinfo.flat = 0;
+                absinfo.fuzz = 0;
+                property_get("waydroid.display_width", property, "720");
+                absinfo.maximum = atoi(property);
+                absinfo.minimum = 0;
+                absinfo.resolution = 0;
                 libevdev_enable_event_type(dev, EV_ABS);
-                libevdev_enable_event_code(dev, EV_ABS, ABS_X, nullptr);
-                libevdev_enable_event_code(dev, EV_ABS, ABS_Y, nullptr);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_X, &absinfo);
+                property_get("waydroid.display_height", property, "1200");
+                absinfo.maximum = atoi(property);
+                libevdev_enable_event_code(dev, EV_ABS, ABS_Y, &absinfo);
 
                 libevdev_enable_event_type(dev, EV_KEY);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_LEFT, nullptr);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_RIGHT, nullptr);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_MIDDLE, nullptr);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_SIDE, nullptr);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_EXTRA, nullptr);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_FORWARD, nullptr);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_BACK, nullptr);
-                libevdev_enable_event_code(dev, EV_KEY, BTN_TASK, nullptr);
+                libevdev_enable_event_code(dev, EV_KEY, BTN_TOUCH, nullptr);
                 break;
             case INPUT_TOUCH:
+                libevdev_set_name(dev, "wayland touchpad");
                 libevdev_enable_event_type(dev, EV_ABS);
                 libevdev_enable_event_code(dev, EV_ABS, ABS_MT_POSITION_X, nullptr);
                 libevdev_enable_event_code(dev, EV_ABS, ABS_MT_POSITION_Y, nullptr);
@@ -602,6 +602,7 @@ ensure_pipe(struct display* display, int input_type)
                 libevdev_enable_event_code(dev, EV_ABS, ABS_MT_PRESSURE, nullptr);
                 break;
             case INPUT_TABLET:
+                libevdev_set_name(dev, "wayland tablet");
                 libevdev_enable_event_type(dev, EV_KEY);
                 libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_PEN, nullptr);
                 libevdev_enable_event_code(dev, EV_KEY, BTN_TOOL_RUBBER, nullptr);
@@ -791,11 +792,8 @@ pointer_handle_motion(void *data, struct wl_pointer *,
     x += display->layers[display->pointer_surface].x;
     y += display->layers[display->pointer_surface].y;
 
-    //res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
-    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], ABS_X, x, 0);
-    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], ABS_Y, y, 0);
-    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], REL_X, x - display->ptrPrvX, 0);
-    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], REL_Y, y - display->ptrPrvY, 0);
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_X, x);
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_Y, y);
     res = libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_SYN, SYN_REPORT, 0);
     if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
@@ -806,7 +804,7 @@ pointer_handle_motion(void *data, struct wl_pointer *,
 
 static void
 pointer_handle_button(void *data, struct wl_pointer *,
-                      uint32_t, uint32_t, uint32_t button,
+                      uint32_t, uint32_t, uint32_t /*button*/,
                       uint32_t state)
 {
     struct display* display = (struct display*)data;
@@ -818,8 +816,13 @@ pointer_handle_button(void *data, struct wl_pointer *,
     if (!display->pointer_surface)
         return;
 
-    // res = write(display->input_fd[INPUT_POINTER], &event, sizeof(event));
-    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_KEY, button, state);
+    ALOGI("display->scale: %d display->ptrPrvX: %d, display->ptrPrvY: %d", display->scale, display->ptrPrvX, display->ptrPrvY);
+    //libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_MT_SLOT, 1);
+    //libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_MT_TRACKING_ID, 1);
+    // libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_X, display->ptrPrvX);
+    // libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_Y, display->ptrPrvY);
+    libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_KEY, BTN_TOUCH, state);
+    //libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_MT_PRESSURE, 255 * state);
     res = libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_SYN, SYN_REPORT, 0);
     if (res != 0)
         ALOGE("Failed to write event for InputFlinger: %s", strerror(errno));
