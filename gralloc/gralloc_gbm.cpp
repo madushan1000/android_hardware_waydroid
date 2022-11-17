@@ -109,6 +109,7 @@ static uint32_t get_gbm_format(int format)
 		break;
 	case HAL_PIXEL_FORMAT_YCbCr_422_SP:
 	case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+	case HAL_PIXEL_FORMAT_YCbCr_420_888:
 	default:
 		fmt = 0;
 		break;
@@ -142,6 +143,7 @@ static int gralloc_gbm_get_bpp(int format)
 	case HAL_PIXEL_FORMAT_YV12:
 	case HAL_PIXEL_FORMAT_YCbCr_422_SP:
 	case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+	case HAL_PIXEL_FORMAT_YCbCr_420_888:
 		bpp = 1;
 		break;
 	default:
@@ -413,10 +415,13 @@ int gralloc_gbm_bo_lock(buffer_handle_t handle,
 	if ((gbm_handle->usage & usage) != (uint32_t)usage) {
 		/* make FB special for testing software renderer with */
 
-		if (!(gbm_handle->usage & GRALLOC_USAGE_SW_READ_OFTEN) &&
-				!(gbm_handle->usage & GRALLOC_USAGE_HW_FB) &&
-				!(gbm_handle->usage & GRALLOC_USAGE_HW_TEXTURE)) {
-			ALOGE("bo.usage:x%X/usage:x%X is not GRALLOC_USAGE_HW_FB or GRALLOC_USAGE_HW_TEXTURE",
+		if (!(gbm_handle->usage & (
+				GRALLOC_USAGE_SW_READ_OFTEN |
+				GRALLOC_USAGE_HW_FB |
+				GRALLOC_USAGE_HW_TEXTURE |
+				GRALLOC_USAGE_HW_VIDEO_ENCODER))) {
+
+			ALOGE("bo.usage:x%X/usage:x%X is not GRALLOC_USAGE_HW_{FB,TEXTURE,VIDEO_ENCODER}",
 				gbm_handle->usage, usage);
 			return -EINVAL;
 		}
@@ -503,6 +508,7 @@ int gralloc_gbm_bo_lock_ycbcr(buffer_handle_t handle,
 
 	switch (hnd->format) {
 	case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+	case HAL_PIXEL_FORMAT_YCbCr_420_888:
 		ystride = cstride = GRALLOC_ALIGN(hnd->width, 16);
 		ycbcr->y = addr;
 		ycbcr->cr = (unsigned char *)addr + ystride * hnd->height;

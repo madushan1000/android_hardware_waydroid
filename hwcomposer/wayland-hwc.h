@@ -147,6 +147,7 @@ struct display {
     std::array<uint8_t, 239> keysDown;
 
     bool isWinResSet;
+    bool isMaximized;
     sp<IWaydroidTask> task;
 };
 
