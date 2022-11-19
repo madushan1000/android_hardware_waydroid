@@ -59,6 +59,7 @@ struct waydroid_hwc_composer_device_1 {
     const hwc_procs_t *procs;     // constant after init
     pthread_t wayland_thread;     // constant after init
     pthread_t vsync_thread;       // constant after init
+    pthread_t hotplug_thread;
     pthread_t extension_thread;   // constant after init
     int32_t vsync_period_ns;      // constant after init
     struct display *display;      // constant after init
@@ -343,6 +344,23 @@ static void* hwc_vsync_thread(void* data) {
         ATRACE_END();
     }
 
+    return NULL;
+}
+
+static void* 
+hwc_hotplug_thread(void* data) {
+    struct waydroid_hwc_composer_device_1* pdev = (struct waydroid_hwc_composer_device_1*)data;
+    setpriority(PRIO_PROCESS, 0, HAL_PRIORITY_URGENT_DISPLAY);
+    
+    pthread_mutex_init(&pdev->display->resized_mutex, NULL);
+    pthread_cond_init(&pdev->display->resized_cond, NULL);
+    
+    while (true) {
+        pthread_mutex_lock(&pdev->display->resized_mutex);
+        pthread_cond_wait(&pdev->display->resized_cond,&pdev->display->resized_mutex);
+        pdev->procs->hotplug(pdev->procs, 0, 1);
+        pthread_mutex_unlock(&pdev->display->resized_mutex);
+    }
     return NULL;
 }
 
@@ -1132,6 +1150,13 @@ static int hwc_open(const struct hw_module_t* module, const char* name,
         ret = pthread_create (&pdev->vsync_thread, NULL, hwc_vsync_thread, pdev);
         if (ret) {
             ALOGE("waydroid_hw_composer could not start vsync_thread\n");
+        }
+    }
+
+    if (!pdev->hotplug_thread) {
+        ret = pthread_create (&pdev->hotplug_thread, NULL, hwc_hotplug_thread, pdev);
+        if (ret) {
+            ALOGE("waydroid_hw_composer could not start hotplug_thread\n");
         }
     }
 

@@ -113,6 +113,8 @@ struct display {
     int scale;
     pthread_mutex_t data_mutex;
     pthread_cond_t data_available_cond;
+    pthread_mutex_t resized_mutex;
+    pthread_cond_t resized_cond;
     bool waiting_for_data;
 
     struct libevdev_uinput * input_fd[INPUT_TOTAL];

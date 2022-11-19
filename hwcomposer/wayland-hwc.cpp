@@ -331,6 +331,11 @@ xdg_toplevel_handle_configure(void *data, struct xdg_toplevel *,
         if (window->display->waiting_for_data)
             pthread_cond_broadcast(&window->display->data_available_cond);
     }
+    /* resizing */
+    ALOGI("xdg_toplevel_handle_configure got width:%d, height:%d", width, height);
+    window->display->width = width;
+    window->display->height = height;
+    pthread_cond_broadcast(&window->display->resized_cond);
 }
 
 static void
@@ -769,6 +774,39 @@ static const struct wl_keyboard_listener keyboard_listener = {
     keyboard_handle_repeat_info,
 };
 
+enum xdg_toplevel_resize_edge
+component_edge(const int width, const int height,
+	       const int pointer_x,
+	       const int pointer_y,
+	       const int margin)
+{
+	const bool top = pointer_y < margin;
+	const bool bottom = pointer_y > (height - margin);
+	const bool left = pointer_x < margin;
+	const bool right = pointer_x > (width - margin);
+
+	if (top)
+		if (left)
+			return XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT;
+		else if (right)
+			return XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT;
+		else
+			return XDG_TOPLEVEL_RESIZE_EDGE_TOP;
+	else if (bottom)
+		if (left)
+			return XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT;
+		else if (right)
+			return XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT;
+		else
+			return XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM;
+	else if (left)
+		return XDG_TOPLEVEL_RESIZE_EDGE_LEFT;
+	else if (right)
+		return XDG_TOPLEVEL_RESIZE_EDGE_RIGHT;
+	else
+		return XDG_TOPLEVEL_RESIZE_EDGE_NONE;
+}
+
 static void
 pointer_handle_enter(void *data, struct wl_pointer *pointer,
                      uint32_t serial, struct wl_surface *surface,
@@ -828,17 +866,36 @@ pointer_handle_motion(void *data, struct wl_pointer *,
 
 static void
 pointer_handle_button(void *data, struct wl_pointer *,
-                      uint32_t, uint32_t, uint32_t /*button*/,
+                      uint32_t serial, uint32_t, uint32_t button,
                       uint32_t state)
 {
     struct display* display = (struct display*)data;
     unsigned int res;
+
+    if (display->windows.find(display->pointer_surface) == display->windows.end())
+    return;
+
+    struct window *window = display->windows[display->pointer_surface];
 
     if (ensure_pipe(display, INPUT_POINTER))
         return;
 
     if (!display->pointer_surface)
         return;
+
+    if (button == BTN_LEFT) {
+	      if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+          enum xdg_toplevel_resize_edge edge = component_edge(display->width, display->height, display->ptrPrvX, display->ptrPrvY, 15);
+			  	if (edge != XDG_TOPLEVEL_RESIZE_EDGE_NONE) {
+					xdg_toplevel_resize(
+                        window->xdg_toplevel,
+                        display->seat,
+                        serial,
+                        edge
+                    );
+                }
+          }
+    }
 
     ALOGI("display->scale: %d display->ptrPrvX: %d, display->ptrPrvY: %d", display->scale, display->ptrPrvX, display->ptrPrvY);
     //libevdev_uinput_write_event(display->input_fd[INPUT_POINTER], EV_ABS, ABS_MT_SLOT, 1);
